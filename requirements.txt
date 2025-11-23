@@ -1,0 +1,14 @@
+Flask
+Flask-Cors
+openai>=1.0.0
+python-dotenv
+Pillow
+numpy
+opencv-python
+mediapipe
+requests
+Werkzeug
+itsdangerous
+click
+Jinja2
+gunicorn

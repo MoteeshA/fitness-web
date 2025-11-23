@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+
+{% block title %}FitSmart AI — Workout Analyzer{% endblock %}
+
+{% block extra_css %}
+  <style>
+    :root {
+      --brand:#0fb15d;       /* Light green */
+      --brand-dark:#0a8e48;  /* Dark green */
+      --muted:#6c757d;
+      --border:#e5e7eb;
+    }
+
+    body {
+      background: radial-gradient(circle at top left, #dcfce7 0, #f8fdf9 40%, #eff6ff 100%);
+    }
+
+    .fs-card {
+      background: #ffffff;
+      color: #111827;
+      border-radius: 18px;
+      padding: 24px 26px;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+      border: 1px solid rgba(226, 232, 240, 0.9);
+    }
+
+    .fs-card-soft {
+      background: linear-gradient(135deg, #ecfdf3 0%, #e0f2fe 100%);
+      border-radius: 18px;
+      padding: 22px 24px;
+      border: 1px solid rgba(209, 250, 229, 0.9);
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.04);
+    }
+
+    .wk-title {
+      color: var(--brand);
+      font-size: 1.4rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .wk-sub {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    label {
+      font-weight: 600;
+      margin-bottom: 6px;
+      display: block;
+      font-size: 0.88rem;
+      color: #111827;
+    }
+
+    .form-control,
+    .form-select {
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      font-size: 0.9rem;
+    }
+
+    /* ===========================================
+       GREEN ANALYZE BUTTON (UNIQUE CLASS)
+       =========================================== */
+
+    .analyze-btn {
+      -webkit-appearance: none;
+      appearance: none;
+      background-color: #16a34a !important; /* solid green */
+      background-image: linear-gradient(135deg, #22c55e, #15803d) !important;
+      color: #ffffff !important;
+      border: none !important;
+      padding: 12px 30px;
+      border-radius: 999px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 10px 25px rgba(22, 163, 74, 0.5);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    }
+
+    .analyze-btn:hover,
+    .analyze-btn:focus {
+      background-image: linear-gradient(135deg, #15803d, #166534) !important;
+      box-shadow: 0 12px 30px rgba(21, 128, 61, 0.7);
+      transform: translateY(-1px);
+      outline: none;
+    }
+
+    .analyze-btn i {
+      font-size: 1.1rem;
+    }
+
+    .wk-video {
+      width: 100%;
+      max-height: 550px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.22);
+      object-fit: contain;
+    }
+
+    .note {
+      background-color: #ecfdf3;
+      padding: 12px;
+      border-radius: 10px;
+      border-left: 3px solid var(--brand);
+      color: #066f53;
+      font-size: 0.8rem;
+    }
+
+    .reps {
+      font-size: 1rem;
+      color: #111827;
+      font-weight: 500;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="container my-4">
+    <div class="row g-4">
+
+      <!-- LEFT PANEL -->
+      <div class="col-lg-7">
+        <div class="fs-card">
+
+          <h1 class="wk-title">
+            <i class="bi bi-dumbbell me-2"></i>Workout Analyzer
+          </h1>
+
+          <p class="wk-sub">
+            Choose the exercise type, upload a clip, and get AI-annotated rep counts.
+          </p>
+
+          <form action="{{ url_for('upload_workout') }}" method="post" enctype="multipart/form-data">
+
+            <div class="mb-2">
+              <label for="workout_type">Choose workout type</label>
+              <select id="workout_type" name="workout_type" class="form-select form-select-sm">
+                <option value="pushup" {% if selected_workout=='pushup' %}selected{% endif %}>Push-up</option>
+                <option value="squat" {% if selected_workout=='squat' %}selected{% endif %}>Squat</option>
+                <option value="pullup" {% if selected_workout=='pullup' %}selected{% endif %}>Pull-up</option>
+                <option value="jumping_jack" {% if selected_workout=='jumping_jack' %}selected{% endif %}>Jumping Jack</option>
+              </select>
+            </div>
+
+            <div class="mb-3">
+              <label for="video">Upload your workout video (MP4/AVI/MOV/MKV)</label>
+              <input type="file" id="video" name="video" accept="video/*" class="form-control form-control-sm" required>
+            </div>
+
+            <!-- ANALYZE BUTTON -->
+            <button type="submit" class="analyze-btn">
+              <i class="bi bi-magic"></i>
+              <span>Analyze</span>
+            </button>
+
+          </form>
+
+          <p class="note mt-3">
+            Tips for best accuracy:<br>
+            • Side view for push-ups/squats<br>
+            • Bar & upper body visible for pull-ups<br>
+            • Full body head-to-toe for jumping jacks<br>
+            • Avoid motion blur
+          </p>
+
+        </div>
+      </div>
+
+      <!-- RIGHT PANEL -->
+      <div class="col-lg-5">
+        {% if video_url %}
+          <div class="fs-card-soft h-100">
+            <h2 class="wk-title" style="font-size:1.2rem;">Result</h2>
+
+            <video controls class="wk-video mt-2 mb-3">
+              <source src="{{ video_url }}" type="video/mp4">
+            </video>
+
+            <p class="reps">
+              Total reps counted: <strong>{{ reps }}</strong>
+            </p>
+
+            <p class="note">
+              Reps estimated using pose landmarks. Keep the camera stable.
+            </p>
+          </div>
+
+        {% else %}
+          <div class="fs-card-soft h-100">
+            <h2 class="wk-title" style="font-size:1.2rem;">How it works</h2>
+
+            <ul class="mt-3">
+              <li>Detects pose joints</li>
+              <li>Tracks movement angles</li>
+              <li>Counts transitions</li>
+              <li>Draws overlay landmarks</li>
+            </ul>
+
+            <p class="muted-small">
+              Upload a video to see your annotated clip and rep count.
+            </p>
+          </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+{% endblock %}
