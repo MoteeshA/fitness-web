@@ -1133,7 +1133,7 @@ def upload_workout():
     output_path = os.path.join(WORKOUT_OUTPUT_FOLDER, output_name)
     video_file.save(input_path)
 
-    # Choose analyzer
+
     try:
         if workout_type == "squat":
             reps, processed_path = _analyze_squat(input_path, output_path)
