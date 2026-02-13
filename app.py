@@ -686,34 +686,51 @@ def assessment():
     return render_template("assessment.html", assessment=assessment_obj, logs=logs)
 
 
-# --- NEW: route matching the template form action ---
 @app.route("/run_assessment", methods=["POST"])
 def run_assessment():
     """
-    This endpoint exists so templates that call url_for('run_assessment')
-    will succeed. It re-uses build_result_from_inputs and returns the
-    same 'assessment' variable (keeps parity with your assessment.html).
-    Also saves the result into logs (if logged in).
+    Supports BOTH:
+    1) AJAX JSON request (assessment page)
+    2) Normal form POST fallback
+
+    Returns JSON if request is JSON.
     """
-    assessment_obj = None
+
     try:
-        # Accept the same fields your assessment form posts
-        age = request.form.get("age")
-        gender = request.form.get("gender")
-        # convert defensively (allow blank)
-        height = float(request.form.get("height") or 0)
-        weight = float(request.form.get("weight") or 0)
-        activity = request.form.get("activity")
-        goals = request.form.get("goals")
-        conditions = request.form.get("conditions")
+        # ---------------------------
+        # Detect request type
+        # ---------------------------
+        if request.is_json:
+            data = request.get_json(silent=True) or {}
+            height = float(data.get("height") or 0)
+            weight = float(data.get("weight") or 0)
+        else:
+            height = float(request.form.get("height") or 0)
+            weight = float(request.form.get("weight") or 0)
 
         if height <= 0 or weight <= 0:
+            if request.is_json:
+                return jsonify({
+                    "success": False,
+                    "message": "Invalid height or weight"
+                }), 400
             flash("Please provide valid height and weight.", "danger")
             return redirect(url_for("assessment"))
 
+        # ---------------------------
+        # Build assessment result
+        # ---------------------------
         assessment_obj = build_result_from_inputs(height, weight)
 
-        # Save to logs table for the current user (if any)
+        log_entry = {
+            "date": datetime.date.today().isoformat(),
+            "type": "assessment",
+            "data": assessment_obj
+        }
+
+        # ---------------------------
+        # Save log
+        # ---------------------------
         user_id = get_current_user_id()
         try:
             conn = sqlite3.connect(DB_NAME)
@@ -722,7 +739,7 @@ def run_assessment():
                 "INSERT INTO logs (user_id, date, type, data) VALUES (?,?,?,?)",
                 (
                     user_id,
-                    datetime.date.today().isoformat(),
+                    log_entry["date"],
                     "assessment",
                     json.dumps(assessment_obj),
                 ),
@@ -730,30 +747,31 @@ def run_assessment():
             conn.commit()
             conn.close()
         except Exception as e:
-            # don't break if logging fails
-            print("Warning: failed to save run_assessment log:", e)
+            print("Warning: failed to save assessment log:", e)
 
-        # Render the assessment page with the assessment object and logs
-        # re-query logs so calendar shows latest entry
-        logs = []
-        uid = get_current_user_id()
-        if uid:
-            conn = sqlite3.connect(DB_NAME)
-            c = conn.cursor()
-            c.execute(
-                "SELECT date, type, data FROM logs WHERE user_id=? ORDER BY date DESC",
-                (uid,),
-            )
-            rows = c.fetchall()
-            conn.close()
-            logs = [
-                {"date": r[0], "type": r[1], "data": json.loads(r[2])} for r in rows
-            ]
+        # ---------------------------
+        # AJAX RESPONSE
+        # ---------------------------
+        if request.is_json:
+            return jsonify({
+                "success": True,
+                "log": log_entry
+            })
 
-        return render_template("assessment.html", assessment=assessment_obj, logs=logs)
+        # ---------------------------
+        # FORM FALLBACK
+        # ---------------------------
+        return redirect(url_for("assessment"))
 
     except Exception as e:
-        # keep behavior consistent with the rest of your app
+        print("run_assessment error:", e)
+
+        if request.is_json:
+            return jsonify({
+                "success": False,
+                "message": str(e)
+            }), 500
+
         flash(f"Failed to run assessment: {e}", "danger")
         return redirect(url_for("assessment"))
 
@@ -786,15 +804,20 @@ def nutrition():
     return render_template("nutrition.html")
 
 
-# ------- OpenAI Vision helper --------
-def _vision_call_with_model(model_name, img_b64):
+def _vision_call_with_model(model_name, img_b64, description=None):
     """
     Helper to query a model; raises OpenAIError to be handled by caller.
     Forces JSON output to reduce parsing errors.
     """
+
+    extra_text = ""
+    if description:
+        extra_text = f"\nUser description: {description}"
+
     prompt = (
         "You are a nutrition expert. Look at the food photo and respond ONLY as strict JSON with this schema: "
         '{"is_food": true|false, "items": [{"name": string, "calories": integer, "protein": number, "carbs": number, "fat": number}]}'
+        + extra_text
     )
 
     return client.chat.completions.create(
@@ -808,7 +831,9 @@ def _vision_call_with_model(model_name, img_b64):
                     {"type": "text", "text": prompt},
                     {
                         "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{img_b64}"
+                        },
                     },
                 ],
             },
@@ -818,32 +843,36 @@ def _vision_call_with_model(model_name, img_b64):
     )
 
 
-def _try_models_with_image_b64(img_b64):
-    """Try configured model, then fallback; return parsed JSON dict."""
+def _try_models_with_image_b64(img_b64, description=None):
     if not OPENAI_API_KEY:
         raise OpenAIError("OpenAI key not set on server. Set OPENAI_API_KEY.")
+
     models_to_try = (
         [VISION_MODEL, "gpt-4o"]
         if VISION_MODEL != "gpt-4o"
         else ["gpt-4o", "gpt-4o-mini"]
     )
+
     last_err = None
+
     for m in models_to_try:
         try:
-            resp = _vision_call_with_model(m, img_b64)
+            resp = _vision_call_with_model(m, img_b64, description)
             raw = resp.choices[0].message.content.strip()
             return json.loads(raw)
+
         except OpenAIError as e:
             last_err = e
             msg = str(e).lower()
             if ("model" in msg) or ("access" in msg) or ("403" in msg):
-                # try next model in list
                 continue
-            # other OpenAI errors should be raised
             raise
+
     if last_err:
         raise last_err
+
     raise OpenAIError("Unknown OpenAI error")
+
 
 
 # --- Upload-based nutrition (existing) ---
@@ -854,6 +883,7 @@ def analyze_nutrition():
         return redirect(url_for("nutrition"))
 
     file = request.files["food_image"]
+    description = request.form.get("food_description", "")
     if file.filename.strip() == "":
         flash("No file selected", "danger")
         return redirect(url_for("nutrition"))
@@ -865,7 +895,7 @@ def analyze_nutrition():
         img.save(buffered, format="JPEG")
         img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-        data = _try_models_with_image_b64(img_b64)
+        data = _try_models_with_image_b64(img_b64, description)
 
         if not data.get("is_food"):
             flash("Upload is not valid (not food).", "danger")

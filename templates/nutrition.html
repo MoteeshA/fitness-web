@@ -244,6 +244,21 @@
                 </div>
               </div>
 
+              <div class="mb-3">
+                <label class="form-label fw-semibold">
+                  Additional Details (Optional)
+                </label>
+                <textarea
+                    class="form-control"
+                    name="food_description"
+                    rows="2"
+                    placeholder="Example: made with ghee, extra oil, chicken, fried onions, large portion">
+                </textarea>
+                <div class="form-text">
+                  Helps improve calorie estimation (oil, ghee, butter, portion size, etc.)
+                </div>
+              </div>
+
               <button type="submit" class="btn btn-success w-100 py-2 rounded-pill">
                 Analyze Nutrition
               </button>
@@ -442,7 +457,7 @@
         setLive(true);
 
         if (!loopTimer) {
-          loopTimer = setInterval(captureAndSend, 2000); // every 2s
+          loopTimer = setInterval(captureAndSend, 2000);
         }
       } catch (err) {
         liveError.textContent = 'Camera error: ' + err;
